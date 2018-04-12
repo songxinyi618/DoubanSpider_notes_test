@@ -1,0 +1,159 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Apr  4 17:28:56 2018
+
+@author: Administrator
+"""
+
+
+from urllib import request
+from urllib.request import urlretrieve
+#from urllib import error
+from bs4 import BeautifulSoup
+import os
+import time
+import pandas as pd 
+import csv
+
+
+#这是代理IP
+#proxy = {'http':'123.53.86.54:31737'}
+#创建ProxyHandler
+#proxy_support = request.ProxyHandler(proxy)
+#创建Opener
+#opener = request.build_opener(proxy_support)
+#安装OPener
+#request.install_opener(opener)
+
+head = {'User-Agent':'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:23.0) Gecko/20100101 Firefox/23.0'} 
+
+#########################打印书籍信息###########################################
+def get_book_info(book_url, head):
+    #book_url = 'https://book.douban.com/subject/1309223/'
+    book_req = request.Request(url = book_url, headers = head)
+    book_response = request.urlopen(book_req)
+    book_html = book_response.read().decode('utf-8','ignore')
+    book_soup = BeautifulSoup(book_html , 'lxml')
+    #print(book_soup)
+        
+    book_name = book_soup.find('h1').get_text() #print(book_name)
+    book_name = book_name.lstrip('\n'); book_name = book_name.rstrip('\n')#; book_name = book_name.lstrip(' '); book_name = book_name.rstrip(' ')
+    book_info = book_soup.find(name = 'div', attrs = {'id':'info'}).get_text()
+    book_ISBN = str(book_info).split('ISBN: ')[1]
+    book_ISBN = book_ISBN.rstrip('\n')#print(book_ISBN)
+    #print(book_info)
+    return book_name, book_ISBN
+    
+#########################打印前几页读书笔记的URL#####################################
+def get_annotation_url(annotation_url, head):
+    annotation_req = request.Request(url = annotation_url, headers = head)
+    annotation_response = request.urlopen(annotation_req)
+    annotation_html = annotation_response.read().decode('utf-8','ignore')
+    annotation_soup = BeautifulSoup(annotation_html , 'lxml')
+    annotation_paginator = annotation_soup.find('div',{'class':'paginator'})
+    #print(annotation_paginator)
+    annotation_contents = []
+    #print(annotation_list)
+        
+    for child in enumerate(annotation_paginator.contents):
+    #print(annotation_paginator.contents[21].string) 
+        if child[1].string != '\n':
+            annotation_contents.append(child[1])
+   
+#annotation_contents = list(filter(lambda x: x != None, annotation_contents))
+#print(annotation_contents)[0:12]).name)['class'])
+
+    annotation_list = [annotation_url]      
+    for child in annotation_contents:   
+    #print(child.name,child.attrs)
+        if child.attrs == {'class': ['prev']} or child.attrs == {'class': ['thispage']} or child.attrs == {'class': ['next']}:
+        #print(child)
+           continue
+   
+        elif child.attrs == {'class': ['break']}:
+            break
+        href = book_url + 'annotation' +child.get('href')
+        annotation_list.append(href)
+    #print(annotation_list)    
+    return annotation_list 
+    
+########################爬取用户头像图片########################################
+def get_user_img(annotation_list, head):
+
+    for one in annotation_list:
+        img_req = request.Request(url = one, headers = head)
+        img_response = request.urlopen(img_req)
+        img_html = img_response.read().decode('utf-8','ignore')
+        img_soup = BeautifulSoup(img_html , 'lxml')
+        img_ilst = img_soup.find_all('div',{'class':'ilst'})  
+        #print(img_ilst)
+        for each in img_ilst:
+            img_url = each.img.get('src')
+            filename = each.img.get('alt') + '.jpg'
+        #list_url.append(each.img.get('src'))
+        #print(list_url)
+            if 'images1' not in os.listdir():
+                os.makedirs('images1')        
+            urlretrieve(url = img_url,filename = 'images1/' + filename)
+            time.sleep(1)    
+            
+########################爬取用户读书笔记内容####################################
+def get_location_notes(annotation_list, head):
+    reading_notes = []
+
+    for one in annotation_list:
+        reading_req = request.Request(url = one, headers = head)
+        reading_response = request.urlopen(reading_req)
+        reading_html = reading_response.read().decode('utf-8','ignore')
+        reading_soup = BeautifulSoup(reading_html , 'lxml')
+        reading_con = reading_soup.find_all('div',{'class':'con'}) 
+        #print(reading_con)
+        for each in reading_con:
+            location = each.find('a',{'class':''}).string #print(location)
+            all_hidden = each.find('div',{'class':'all hidden','style':'display:none'}).get_text()#print(all_hidden)
+            notes = all_hidden.split('推荐')[0]#
+            #print(notes)
+        
+            sdata = {'location':location,'notes':notes}
+            reading_notes.append(sdata)
+    reading_notes = pd.DataFrame(reading_notes)#print(reading_notes[1:7])
+    
+    reading_path = '%s%s%s' %('E:\宋心艺\Github\爬虫学习\读书笔记\\', book_name, '.csv') #print(reading_path)
+    reading_notes.to_csv(reading_path, index = False,encoding = 'utf-8')
+
+######################调用子函数###############################################
+if __name__=='__main__':
+    for i in range(1310544, 1400000):
+        book_url = "https://book.douban.com/subject/" +str(i) + "/"
+        annotation_url = book_url +"annotation?sort=rank"
+        #print(book_url)
+############
+        try:
+            book_name = get_book_info(book_url, head)[0]
+            book_ISBN = get_book_info(book_url, head)[1]
+            #print(book_name, book_ISBN)
+            with open(r'E:\宋心艺\Github\爬虫学习\书名与ISBN.csv','a+', newline = '') as datacsv:
+                csvwriter = csv.writer(datacsv, delimiter = ',')
+                csvwriter.writerow([i, book_name, book_ISBN])    
+        except:
+            print(str(i),'书名与ISBN失败')
+############   
+        try:
+            annotation_list = get_annotation_url(annotation_url, head)
+            print(str(i),'annotation_list成功')
+        except:
+            annotation_list = []
+            print(str(i),'annotation_list失败') 
+############ 
+        if annotation_list != []:
+            try:
+                get_user_img(annotation_list, head)
+                print(str(i),'下载头像成功')
+            except:
+                print(str(i),'下载头像失败')           
+            try:
+                get_location_notes(annotation_list, head)
+                print(str(i),'读书笔记成功')
+            except:
+                print(str(i),'读书笔记失败')        
+        time.sleep(1)
